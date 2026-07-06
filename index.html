@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Procedural Water – Full Resonance Engine</title>
+    <style>
+        :root {
+            --bg: #0d0d0d;
+            --surface: #1a1a1a;
+            --surface2: #222;
+            --text: #d4d4d4;
+            --muted: #888;
+            --accent-water: #3498db;
+            --accent-resonance: #9b59b6;
+            --accent-stop: #e74c3c;
+            --toggle-on-real: #3da5f5;
+            --toggle-on-res: #b07cd8;
+            --border: #333;
+            --shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', 'Inter', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 30px 16px 50px;
+            min-height: 100vh;
+        }
+
+        .container {
+            background: var(--surface);
+            padding: 28px 24px 24px;
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            max-width: 680px;
+            width: 100%;
+            box-shadow: var(--shadow);
+        }
+
+        h1 {
+            color: #03dac6;
+            margin: 0 0 6px;
+            font-size: 1.6em;
+            letter-spacing: -0.3px;
+        }
+        .subtitle {
+            color: var(--muted);
+            font-size: 0.88em;
+            line-height: 1.45;
+            margin-bottom: 18px;
+        }
+
+        /* Visualizers */
+        .visualizers {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 18px;
+            width: 100%;
+        }
+        .canvas-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        .canvas-label {
+            font-size: 0.7em;
+            color: #777;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            text-align: center;
+        }
+        canvas {
+            width: 100%;
+            height: 100px;
+            background: #000;
+            border-radius: 6px;
+            border: 1px solid #2a2a2a;
+        }
+
+        /* Mode buttons */
+        .mode-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+        .mode-btn {
+            flex: 1;
+            min-width: 130px;
+            padding: 13px 16px;
+            font-size: 1em;
+            font-weight: 700;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            letter-spacing: 0.3px;
+        }
+        #btn-normal {
+            background: var(--accent-water);
+            color: #fff;
+        }
+        #btn-resonant {
+            background: var(--accent-resonance);
+            color: #fff;
+        }
+        #btn-stop {
+            background: var(--accent-stop);
+            color: #fff;
+            display: none;
+        }
+        .mode-btn:hover {
+            filter: brightness(1.18);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+        }
+        .mode-btn:active {
+            transform: scale(0.97);
+            filter: brightness(0.95);
+        }
+        .mode-btn.active-mode {
+            box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.35);
+            filter: brightness(1.1);
+        }
+
+        /* Toggle panel */
+        .toggle-panel {
+            background: var(--surface2);
+            border-radius: 10px;
+            padding: 16px 18px 12px;
+            margin-bottom: 14px;
+            border: 1px solid #2a2a2a;
+        }
+        .toggle-section-title {
+            font-size: 0.75em;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: #999;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+        .toggle-section-title.realism {
+            color: var(--toggle-on-real);
+        }
+        .toggle-section-title.resonance {
+            color: var(--toggle-on-res);
+            margin-top: 14px;
+        }
+        .toggle-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 7px 0;
+            border-bottom: 1px solid #1f1f1f;
+            gap: 12px;
+        }
+        .toggle-row:last-child {
+            border-bottom: none;
+        }
+        .toggle-info {
+            flex: 1;
+        }
+        .toggle-name {
+            font-weight: 600;
+            font-size: 0.9em;
+            color: #ddd;
+        }
+        .toggle-desc {
+            font-size: 0.7em;
+            color: #777;
+            margin-top: 1px;
+        }
+        /* Toggle switch */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 48px;
+            height: 26px;
+            flex-shrink: 0;
+        }
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #3a3a3a;
+            transition: 0.25s;
+            border-radius: 26px;
+        }
+        .slider::before {
+            content: "";
+            position: absolute;
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background-color: #ccc;
+            transition: 0.25s;
+            border-radius: 50%;
+        }
+        input:checked+.slider.realism-slider {
+            background-color: var(--toggle-on-real);
+        }
+        input:checked+.slider.resonance-slider {
+            background-color: var(--toggle-on-res);
+        }
+        input:checked+.slider::before {
+            transform: translateX(22px);
+            background-color: #fff;
+        }
+        .toggle-row.disabled-row {
+            opacity: 0.4;
+            pointer-events: none;
+        }
+        .toggle-row.disabled-row .toggle-name {
+            color: #666;
+        }
+
+        /* Status indicator */
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.78em;
+            color: #888;
+            margin-top: 8px;
+            min-height: 20px;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #555;
+            flex-shrink: 0;
+        }
+        .status-dot.playing {
+            background: #2ecc71;
+            box-shadow: 0 0 8px #2ecc71;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%,
+            100% {
+                box-shadow: 0 0 4px #2ecc71;
+            }
+            50% {
+                box-shadow: 0 0 14px #2ecc71, 0 0 24px rgba(46, 204, 113, 0.4);
+            }
+        }
+        .status-dot.stopped {
+            background: #555;
+        }
+
+        @media (max-width: 500px) {
+            .container {
+                padding: 16px 12px 14px;
+            }
+            h1 {
+                font-size: 1.3em;
+            }
+            .mode-btn {
+                font-size: 0.85em;
+                padding: 10px 12px;
+            }
+            .toggle-name {
+                font-size: 0.78em;
+            }
+            .toggle-desc {
+                font-size: 0.65em;
+            }
+            canvas {
+                height: 70px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>🌊 Procedural Water Engine</h1>
+        <p class="subtitle">Brown noise stream + dynamic bubbles. Toggle features below to sculpt realism &amp; resonance in real time. Resonance features apply in <strong>Resonant</strong> mode.</p>
+
+        <!-- Visualizers -->
+        <div class="visualizers">
+            <div class="canvas-container">
+                <span class="canvas-label">Oscilloscope</span>
+                <canvas id="osc-canvas"></canvas>
+            </div>
+            <div class="canvas-container">
+                <span class="canvas-label">Spectrum</span>
+                <canvas id="fft-canvas"></canvas>
+            </div>
+        </div>
+
+        <!-- Mode buttons -->
+        <div class="mode-buttons">
+            <button class="mode-btn" id="btn-normal">🌊 Normal Water</button>
+            <button class="mode-btn" id="btn-resonant">✨ Resonant Water</button>
+            <button class="mode-btn" id="btn-stop">⏹ Stop</button>
+        </div>
+
+        <!-- Toggle panel -->
+        <div class="toggle-panel" id="toggle-panel">
+            <div class="toggle-section-title realism">💧 Realism Features</div>
+
+            <div class="toggle-row" id="row-toggle1">
+                <div class="toggle-info">
+                    <span class="toggle-name">Noise-Based Bubbles</span>
+                    <span class="toggle-desc">Filtered noise bursts instead of pure sine pops</span>
+                </div>
+                <label class="switch"><input type="checkbox" id="toggle1" checked><span class="slider realism-slider"></span></label>
+            </div>
+
+            <div class="toggle-row" id="row-toggle2">
+                <div class="toggle-info">
+                    <span class="toggle-name">Flow LFO Modulation</span>
+                    <span class="toggle-desc">Slowly sweeps the water lowpass for surging movement</span>
+                </div>
+                <label class="switch"><input type="checkbox" id="toggle2" checked><span class="slider realism-slider"></span></label>
+            </div>
+
+            <div class="toggle-row" id="row-toggle3">
+                <div class="toggle-info">
+                    <span class="toggle-name">Sub-Bass Rumble</span>
+                    <span class="toggle-desc">Deep 100Hz layer adds weight &amp; underwater pressure</span>
+                </div>
+                <label class="switch"><input type="checkbox" id="toggle3" checked><span class="slider realism-slider"></span></label>
+            </div>
+
+            <div class="toggle-section-title resonance">🔮 Resonance Features <span style="font-weight:400;font-size:0.85em;text-transform:none;letter-spacing:0;">(Resonant mode only)</span></div>
+
+            <div class="toggle-row" id="row-toggle4">
+                <div class="toggle-info">
+                    <span class="toggle-name">Feedback Delay (C4-tuned)</span>
+                    <span class="toggle-desc">Shimmering comb-filtered tails at the root frequency</span>
+                </div>
+                <label class="switch"><input type="checkbox" id="toggle4" checked><span class="slider resonance-slider"></span></label>
+            </div>
+
+            <div class="toggle-row" id="row-toggle5">
+                <div class="toggle-info">
+                    <span class="toggle-name">Cascaded Bandpass Filters</span>
+                    <span class="toggle-desc">Double-stage per note for sharper vocal/formant resonance</span>
+                </div>
+                <label class="switch"><input type="checkbox" id="toggle5" checked><span class="slider resonance-slider"></span></label>
+            </div>
+
+            <div class="toggle-row" id="row-toggle6">
+                <div class="toggle-info">
+                    <span class="toggle-name">Pre-Filter Saturation</span>
+                    <span class="toggle-desc">Soft clipping excites harmonics the filters grab onto</span>
+                </div>
+                <label class="switch"><input type="checkbox" id="toggle6" checked><span class="slider resonance-slider"></span></label>
+            </div>
+
+            <div class="toggle-row" id="row-toggle7">
+                <div class="toggle-info">
+                    <span class="toggle-name">Q Modulation (Breathing)</span>
+                    <span class="toggle-desc">Slow LFOs vary each filter's resonance for organic life</span>
+                </div>
+                <label class="switch"><input type="checkbox" id="toggle7" checked><span class="slider resonance-slider"></span></label>
+            </div>
+        </div>
+
+        <!-- Status -->
+        <div class="status-bar">
+            <span class="status-dot stopped" id="status-dot"></span>
+            <span id="status-text">Ready – press a mode button to start</span>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            // ───────────────────────────────────
+            // DOM refs
+            // ───────────────────────────────────
+            const btnNormal = document.getElementById('btn-normal');
+            const btnResonant = document.getElementById('btn-resonant');
+            const btnStop = document.getElementById('btn-stop');
+            const statusDot = document.getElementById('status-dot');
+            const statusText = document.getElementById('status-text');
+            const togglePanel = document.getElementById('toggle-panel');
+
+            const oscCanvas = document.getElementById('osc-canvas');
+            const oscCtx = oscCanvas.getContext('2d');
+            const fftCanvas = document.getElementById('fft-canvas');
+            const fftCtx = fftCanvas.getContext('2d');
+
+            // Toggle checkboxes
+            const t1 = document.getElementById('toggle1'); // noise bubbles
+            const t2 = document.getElementById('toggle2'); // flow LFO
+            const t3 = document.getElementById('toggle3'); // sub-bass
+            const t4 = document.getElementById('toggle4'); // feedback delay
+            const t5 = document.getElementById('toggle5'); // cascaded bandpass
+            const t6 = document.getElementById('toggle6'); // saturation
+            const t7 = document.getElementById('toggle7'); // Q modulation
+
+            // Resonance toggle rows (for dimming in normal mode)
+            const resonanceRows = [
+                document.getElementById('row-toggle4'),
+                document.getElementById('row-toggle5'),
+                document.getElementById('row-toggle6'),
+                document.getElementById('row-toggle7'),
+            ];
+
+            // ───────────────────────────────────
+            // Audio state
+            // ───────────────────────────────────
+            let audioCtx = null;
+            let isPlaying = false;
+            let currentMode = 'none'; // 'normal' | 'resonant' | 'none'
+            let animationId = null;
+
+            // Tracked nodes for cleanup
+            let masterGain = null;
+            let compressor = null;
+            let analyzer = null;
+            let waterMixBus = null;
+            let noiseNode = null;
+            let noiseLowpass = null;
+            let lowpassLFO = null;
+            let lowpassLFOGain = null;
+            let subNoiseNode = null;
+            let subLowpass = null;
+            let subGain = null;
+            let bubbleTimer = null;
+            let bubbleTypeIsNoise = true; // mirrors toggle1
+
+            // Resonance nodes
+            let waveshaper = null;
+            let satBypassGain = null;
+            let satThroughGain = null;
+            let bandpassNodes = []; // {bp1, bp2, singleGain, cascadeGain, qLFO, qLFOGain}
+            let delayNode = null;
+            let delayFeedbackGain = null;
+            let delayOutputGain = null;
+            let delayFeedbackLP = null;
+            let dryGain = null;
+
+            // ───────────────────────────────────
+            // Canvas setup
+            // ───────────────────────────────────
+            function resizeCanvases() {
+                const dpr = window.devicePixelRatio || 1;
+                [oscCanvas, fftCanvas].forEach(c => {
+                    const rect = c.getBoundingClientRect();
+                    c.width = rect.width * dpr;
+                    c.height = rect.height * dpr;
+                });
+            }
+            resizeCanvases();
+            window.addEventListener('resize', resizeCanvases);
+
+            // ───────────────────────────────────
+            // Utility: Brown noise buffer
+            // ───────────────────────────────────
+            function createBrownNoiseBuffer(ctx) {
+                const bufferSize = ctx.sampleRate * 2;
+                const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+                const output = buffer.getChannelData(0);
+                let lastOut = 0;
+                for (let i = 0; i < bufferSize; i++) {
+                    const white = Math.random() * 2 - 1;
+                    output[i] = (lastOut + 0.02 * white) / 1.02;
+                    lastOut = output[i];
+                    output[i] *= 3.5;
+                }
+                return buffer;
+            }
+
+            function createBrownNoiseSource(ctx, buffer) {
+                const src = ctx.createBufferSource();
+                src.buffer = buffer;
+                src.loop = true;
+                return src;
+            }
+
+            // ───────────────────────────────────
+            // Saturation curve
+            // ───────────────────────────────────
+            function createSoftClipCurve() {
+                const curve = new Float32Array(256);
+                for (let i = 0; i < 256; i++) {
+                    const x = (i - 128) / 128;
+                    curve[i] = Math.tanh(x * 2.2);
+                }
+                return curve;
+            }
+
+            // ───────────────────────────────────
+            // Bubble spawners
+            // ───────────────────────────────────
+            function spawnSineBubble() {
+                if (!isPlaying || !audioCtx || !waterMixBus) return;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(waterMixBus);
+                const now = audioCtx.currentTime;
+                const baseFreq = 300 + Math.random() * 500;
+                const duration = 0.05 + Math.random() * 0.08;
+                osc.frequency.setValueAtTime(baseFreq, now);
+                osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.5, now + duration);
+                gain.gain.setValueAtTime(0, now);
+                gain.gain.linearRampToValueAtTime(0.3 + Math.random() * 0.4, now + 0.01);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+                osc.start(now);
+                osc.stop(now + duration);
+                scheduleNextBubble();
+            }
+
+            function spawnNoiseBubble() {
+                if (!isPlaying || !audioCtx || !waterMixBus) return;
+                const dur = 0.03 + Math.random() * 0.06;
+                const bufSize = Math.floor(audioCtx.sampleRate * dur);
+                const noiseBuf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+                const data = noiseBuf.getChannelData(0);
+                for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+                const src = audioCtx.createBufferSource();
+                src.buffer = noiseBuf;
+                const bp = audioCtx.createBiquadFilter();
+                bp.type = 'bandpass';
+                bp.Q.value = 8 + Math.random() * 14;
+                const gain = audioCtx.createGain();
+                src.connect(bp);
+                bp.connect(gain);
+                gain.connect(waterMixBus);
+                const now = audioCtx.currentTime;
+                const baseFreq = 400 + Math.random() * 600;
+                bp.frequency.setValueAtTime(baseFreq, now);
+                bp.frequency.exponentialRampToValueAtTime(baseFreq * 2.0, now + dur);
+                gain.gain.setValueAtTime(0, now);
+                gain.gain.linearRampToValueAtTime(0.22 + Math.random() * 0.3, now + 0.005);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+                src.start(now);
+                src.stop(now + dur);
+                // Cluster occasionally
+                if (Math.random() < 0.3) {
+                    setTimeout(() => {
+                        if (isPlaying && bubbleTypeIsNoise) spawnNoiseBubble();
+                    }, 15 + Math.random() * 40);
+                }
+                scheduleNextBubble();
+            }
+
+            function scheduleNextBubble() {
+                if (!isPlaying) return;
+                clearTimeout(bubbleTimer);
+                const nextTime = 40 + Math.random() * 180;
+                bubbleTimer = setTimeout(() => {
+                    if (!isPlaying) return;
+                    if (bubbleTypeIsNoise) spawnNoiseBubble();
+                    else spawnSineBubble();
+                }, nextTime);
+            }
+
+            function kickBubbleLoop() {
+                bubbleTypeIsNoise = t1.checked;
+                clearTimeout(bubbleTimer);
+                if (bubbleTypeIsNoise) spawnNoiseBubble();
+                else spawnSineBubble();
+            }
+
+            // ───────────────────────────────────
+            // Full cleanup
+            // ───────────────────────────────────
+            function fullCleanup() {
+                isPlaying = false;
+                clearTimeout(bubbleTimer);
+                bubbleTimer = null;
+                if (lowpassLFO) {
+                    try { lowpassLFO.stop(); } catch (e) {}
+                }
+                if (noiseNode) {
+                    try { noiseNode.stop(); } catch (e) {}
+                }
+                if (subNoiseNode) {
+                    try { subNoiseNode.stop(); } catch (e) {}
+                }
+                // Stop Q modulation LFOs
+                bandpassNodes.forEach(b => {
+                    if (b.qLFO) { try { b.qLFO.stop(); } catch (e) {} }
+                });
+                // Disconnect key buses
+                if (waterMixBus) { try { waterMixBus.disconnect(); } catch (e) {} }
+                if (masterGain) { try { masterGain.disconnect(); } catch (e) {} }
+                if (compressor) { try { compressor.disconnect(); } catch (e) {} }
+                // Null references
+                lowpassLFO = null;
+                lowpassLFOGain = null;
+                noiseNode = null;
+                noiseLowpass = null;
+                subNoiseNode = null;
+                subLowpass = null;
+                subGain = null;
+                waterMixBus = null;
+                bandpassNodes = [];
+                waveshaper = null;
+                satBypassGain = null;
+                satThroughGain = null;
+                delayNode = null;
+                delayFeedbackGain = null;
+                delayOutputGain = null;
+                delayFeedbackLP = null;
+                dryGain = null;
+                masterGain = null;
+                compressor = null;
+                analyzer = null;
+                currentMode = 'none';
+                updateUIState();
+            }
+
+            // ───────────────────────────────────
+            // Build audio graph
+            // ───────────────────────────────────
+            function buildAndPlay(mode) {
+                fullCleanup();
+                if (!audioCtx) {
+                    audioCtx = new(window.AudioContext || window.webkitAudioContext)();
+                }
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+
+                isPlaying = true;
+                currentMode = mode;
+
+                // Master chain
+                masterGain = audioCtx.createGain();
+                compressor = audioCtx.createDynamicsCompressor();
+                compressor.threshold.value = -12;
+                compressor.ratio.value = 4;
+                compressor.attack.value = 0.005;
+                compressor.release.value = 0.15;
+                analyzer = audioCtx.createAnalyser();
+                analyzer.fftSize = 2048;
+                masterGain.connect(compressor);
+                compressor.connect(analyzer);
+                analyzer.connect(audioCtx.destination);
+
+                // Water mix bus
+                waterMixBus = audioCtx.createGain();
+                waterMixBus.gain.value = 1.0;
+
+                // Main brown noise
+                const noiseBuffer = createBrownNoiseBuffer(audioCtx);
+                noiseNode = createBrownNoiseSource(audioCtx, noiseBuffer);
+                noiseLowpass = audioCtx.createBiquadFilter();
+                noiseLowpass.type = 'lowpass';
+                noiseLowpass.frequency.value = 600;
+                noiseLowpass.Q.value = 1;
+                noiseNode.connect(noiseLowpass);
+                noiseLowpass.connect(waterMixBus);
+                noiseNode.start();
+
+                // Flow LFO (toggle 2)
+                if (t2.checked) {
+                    lowpassLFO = audioCtx.createOscillator();
+                    lowpassLFOGain = audioCtx.createGain();
+                    lowpassLFO.frequency.value = 0.15 + Math.random() * 0.3;
+                    lowpassLFOGain.gain.value = 150;
+                    lowpassLFO.connect(lowpassLFOGain);
+                    lowpassLFOGain.connect(noiseLowpass.frequency);
+                    lowpassLFO.start();
+                }
+
+                // Sub-bass (toggle 3)
+                if (t3.checked) {
+                    subNoiseNode = createBrownNoiseSource(audioCtx, noiseBuffer);
+                    subLowpass = audioCtx.createBiquadFilter();
+                    subLowpass.type = 'lowpass';
+                    subLowpass.frequency.value = 100;
+                    subLowpass.Q.value = 1;
+                    subGain = audioCtx.createGain();
+                    subGain.gain.value = 0.55;
+                    subNoiseNode.connect(subLowpass);
+                    subLowpass.connect(subGain);
+                    subGain.connect(waterMixBus);
+                    subNoiseNode.start();
+                }
+
+                // Bubbles
+                kickBubbleLoop();
+
+                // ── Mode-specific routing ──
+                if (mode === 'normal') {
+                    masterGain.gain.value = 1.0;
+                    waterMixBus.connect(masterGain);
+                } else if (mode === 'resonant') {
+                    masterGain.gain.value = 0.75;
+                    const chordFreqs = [261.63, 329.63, 392.00, 523.25]; // C4 E4 G4 C5
+
+                    // Saturation (toggle 6) – path for bandpass bank
+                    waveshaper = audioCtx.createWaveShaper();
+                    waveshaper.curve = createSoftClipCurve();
+                    satBypassGain = audioCtx.createGain();
+                    satThroughGain = audioCtx.createGain();
+                    // bypass: clean signal; through: via waveshaper
+                    waterMixBus.connect(satBypassGain);
+                    waterMixBus.connect(waveshaper);
+                    waveshaper.connect(satThroughGain);
+                    if (t6.checked) {
+                        satBypassGain.gain.value = 0;
+                        satThroughGain.gain.value = 1;
+                    } else {
+                        satBypassGain.gain.value = 1;
+                        satThroughGain.gain.value = 0;
+                    }
+                    // Sum point for bandpass input
+                    const bandpassInput = audioCtx.createGain();
+                    bandpassInput.gain.value = 1;
+                    satBypassGain.connect(bandpassInput);
+                    satThroughGain.connect(bandpassInput);
+
+                    // Bandpass bank
+                    bandpassNodes = [];
+                    chordFreqs.forEach((freq, idx) => {
+                        const bp1 = audioCtx.createBiquadFilter();
+                        bp1.type = 'bandpass';
+                        bp1.frequency.value = freq;
+                        bp1.Q.value = 28;
+
+                        const bp2 = audioCtx.createBiquadFilter();
+                        bp2.type = 'bandpass';
+                        bp2.frequency.value = freq;
+                        bp2.Q.value = 28;
+
+                        const singleGain = audioCtx.createGain();
+                        const cascadeGain = audioCtx.createGain();
+
+                        // Route: bandpassInput -> bp1 -> [split]
+                        //   path A: bp1 -> singleGain -> masterGain
+                        //   path B: bp1 -> bp2 -> cascadeGain -> masterGain
+                        bandpassInput.connect(bp1);
+                        bp1.connect(singleGain);
+                        bp1.connect(bp2);
+                        bp2.connect(cascadeGain);
+                        singleGain.connect(masterGain);
+                        cascadeGain.connect(masterGain);
+
+                        // Set gains based on toggle 5
+                        if (t5.checked) {
+                            singleGain.gain.value = 0;
+                            cascadeGain.gain.value = 1;
+                        } else {
+                            singleGain.gain.value = 1;
+                            cascadeGain.gain.value = 0;
+                        }
+
+                        // Q modulation LFOs (toggle 7)
+                        let qLFO = null;
+                        let qLFOGain = null;
+                        if (t7.checked) {
+                            qLFO = audioCtx.createOscillator();
+                            qLFOGain = audioCtx.createGain();
+                            const rates = [0.08, 0.11, 0.09, 0.13];
+                            qLFO.frequency.value = rates[idx] || 0.1;
+                            qLFOGain.gain.value = 22;
+                            qLFO.connect(qLFOGain);
+                            qLFOGain.connect(bp1.Q);
+                            qLFOGain.connect(bp2.Q);
+                            qLFO.start();
+                        }
+
+                        bandpassNodes.push({
+                            bp1,
+                            bp2,
+                            singleGain,
+                            cascadeGain,
+                            qLFO,
+                            qLFOGain
+                        });
+                    });
+
+                    // Feedback delay (toggle 4) – taps from waterMixBus
+                    delayNode = audioCtx.createDelay(1.0);
+                    delayNode.delayTime.value = 1.0 / 261.63; // period of C4
+                    delayFeedbackLP = audioCtx.createBiquadFilter();
+                    delayFeedbackLP.type = 'lowpass';
+                    delayFeedbackLP.frequency.value = 8000;
+                    delayFeedbackLP.Q.value = 0.7;
+                    delayFeedbackGain = audioCtx.createGain();
+                    delayFeedbackGain.gain.value = t4.checked ? 0.35 : 0;
+                    delayOutputGain = audioCtx.createGain();
+                    delayOutputGain.gain.value = t4.checked ? 0.5 : 0;
+
+                    waterMixBus.connect(delayNode);
+                    delayNode.connect(delayFeedbackLP);
+                    delayFeedbackLP.connect(delayFeedbackGain);
+                    delayFeedbackGain.connect(delayNode); // feedback loop
+                    delayNode.connect(delayOutputGain);
+                    delayOutputGain.connect(masterGain);
+
+                    // Dry mix
+                    dryGain = audioCtx.createGain();
+                    dryGain.gain.value = 0.15;
+                    waterMixBus.connect(dryGain);
+                    dryGain.connect(masterGain);
+                }
+
+                updateUIState();
+                if (!animationId) drawVisualizers();
+            }
+
+            // ───────────────────────────────────
+            // Dynamic toggle updates (no rebuild)
+            // ───────────────────────────────────
+            function applyToggle2() {
+                if (lowpassLFOGain) lowpassLFOGain.gain.value = t2.checked ? 150 : 0;
+            }
+
+            function applyToggle3() {
+                if (subGain) subGain.gain.value = t3.checked ? 0.55 : 0;
+            }
+
+            function applyToggle4() {
+                if (delayFeedbackGain) delayFeedbackGain.gain.value = t4.checked ? 0.35 : 0;
+                if (delayOutputGain) delayOutputGain.gain.value = t4.checked ? 0.5 : 0;
+            }
+
+            function applyToggle5() {
+                bandpassNodes.forEach(b => {
+                    if (t5.checked) {
+                        b.singleGain.gain.value = 0;
+                        b.cascadeGain.gain.value = 1;
+                    } else {
+                        b.singleGain.gain.value = 1;
+                        b.cascadeGain.gain.value = 0;
+                    }
+                });
+            }
+
+            function applyToggle6() {
+                if (satBypassGain && satThroughGain) {
+                    if (t6.checked) {
+                        satBypassGain.gain.value = 0;
+                        satThroughGain.gain.value = 1;
+                    } else {
+                        satBypassGain.gain.value = 1;
+                        satThroughGain.gain.value = 0;
+                    }
+                }
+            }
+
+            function applyToggle7() {
+                bandpassNodes.forEach(b => {
+                    if (b.qLFOGain) b.qLFOGain.gain.value = t7.checked ? 22 : 0;
+                });
+            }
+
+            // ───────────────────────────────────
+            // UI state
+            // ───────────────────────────────────
+            function updateUIState() {
+                const playing = isPlaying && currentMode !== 'none';
+                btnNormal.style.display = playing ? 'none' : 'block';
+                btnResonant.style.display = playing ? 'none' : 'block';
+                btnStop.style.display = playing ? 'block' : 'none';
+
+                // Highlight active mode button
+                btnNormal.classList.remove('active-mode');
+                btnResonant.classList.remove('active-mode');
+                if (currentMode === 'normal') btnNormal.classList.add('active-mode');
+                if (currentMode === 'resonant') btnResonant.classList.add('active-mode');
+
+                // Dim resonance toggles in normal mode
+                const dimResonance = (currentMode === 'normal');
+                resonanceRows.forEach(row => {
+                    if (dimResonance) row.classList.add('disabled-row');
+                    else row.classList.remove('disabled-row');
+                });
+
+                // Status dot
+                statusDot.classList.toggle('playing', playing);
+                statusDot.classList.toggle('stopped', !playing);
+                if (currentMode === 'normal') statusText.textContent = 'Playing – Normal Water (realism features active)';
+                else if (currentMode === 'resonant') statusText.textContent =
+                    'Playing – Resonant Water (all features active)';
+                else statusText.textContent = 'Ready – press a mode button to start';
+            }
+
+            // ───────────────────────────────────
+            // Visualizer loop
+            // ───────────────────────────────────
+            function drawVisualizers() {
+                animationId = requestAnimationFrame(drawVisualizers);
+                if (!analyzer) return;
+
+                const oscW = oscCanvas.width;
+                const oscH = oscCanvas.height;
+                const fftW = fftCanvas.width;
+                const fftH = fftCanvas.height;
+
+                // Oscilloscope
+                const timeData = new Float32Array(analyzer.frequencyBinCount);
+                analyzer.getFloatTimeDomainData(timeData);
+                oscCtx.fillStyle = '#000000';
+                oscCtx.fillRect(0, 0, oscW, oscH);
+                oscCtx.lineWidth = 2;
+                const waveColor = currentMode === 'resonant' ? '#b07cd8' : '#3da5f5';
+                oscCtx.strokeStyle = waveColor;
+                oscCtx.beginPath();
+                const sliceW = oscW / timeData.length;
+                let x = 0;
+                for (let i = 0; i < timeData.length; i++) {
+                    const y = (timeData[i] * oscH / 2) + (oscH / 2);
+                    if (i === 0) oscCtx.moveTo(x, y);
+                    else oscCtx.lineTo(x, y);
+                    x += sliceW;
+                }
+                oscCtx.stroke();
+
+                // Spectrum
+                const freqData = new Uint8Array(analyzer.frequencyBinCount);
+                analyzer.getByteFrequencyData(freqData);
+                fftCtx.fillStyle = '#000000';
+                fftCtx.fillRect(0, 0, fftW, fftH);
+                const barCount = Math.floor(freqData.length / 4);
+                const barW = fftW / barCount;
+                fftCtx.beginPath();
+                fftCtx.moveTo(0, fftH);
+                for (let i = 0; i < barCount; i++) {
+                    const v = freqData[i] / 255;
+                    fftCtx.lineTo(i * barW, fftH - (v * fftH));
+                }
+                fftCtx.lineTo(fftW, fftH);
+                const fillColor = currentMode === 'resonant' ?
+                    'rgba(176,124,216,0.5)' :
+                    'rgba(61,165,245,0.5)';
+                fftCtx.fillStyle = fillColor;
+                fftCtx.fill();
+            }
+
+            // ───────────────────────────────────
+            // Stop
+            // ───────────────────────────────────
+            function stopAudio() {
+                fullCleanup();
+                if (animationId) {
+                    cancelAnimationFrame(animationId);
+                    animationId = null;
+                }
+                // Clear canvases
+                oscCtx.fillStyle = '#000';
+                oscCtx.fillRect(0, 0, oscCanvas.width, oscCanvas.height);
+                fftCtx.fillStyle = '#000';
+                fftCtx.fillRect(0, 0, fftCanvas.width, fftCanvas.height);
+                updateUIState();
+                statusText.textContent = 'Stopped – press a mode button to start';
+                statusDot.classList.remove('playing');
+                statusDot.classList.add('stopped');
+            }
+
+            // ───────────────────────────────────
+            // Event handlers
+            // ───────────────────────────────────
+            btnNormal.addEventListener('click', () => buildAndPlay('normal'));
+            btnResonant.addEventListener('click', () => buildAndPlay('resonant'));
+            btnStop.addEventListener('click', stopAudio);
+
+            // Toggle change handlers
+            function onToggleChange(toggleEl, applyFn, requiresRebuild = false) {
+                toggleEl.addEventListener('change', () => {
+                    if (!isPlaying) return;
+                    if (requiresRebuild) {
+                        // Rebuild with current mode
+                        const mode = currentMode;
+                        buildAndPlay(mode);
+                    } else {
+                        applyFn();
+                    }
+                });
+            }
+
+            onToggleChange(t1, () => {
+                bubbleTypeIsNoise = t1.checked;
+            }); // no rebuild, next bubble uses new type
+            onToggleChange(t2, applyToggle2);
+            onToggleChange(t3, applyToggle3);
+            onToggleChange(t4, applyToggle4);
+            onToggleChange(t5, applyToggle5); // dynamic, no rebuild needed (gain-switched)
+            onToggleChange(t6, applyToggle6);
+            onToggleChange(t7, applyToggle7);
+
+            // Initial UI state
+            updateUIState();
+
+            // Handle page unload
+            window.addEventListener('beforeunload', () => {
+                fullCleanup();
+                if (audioCtx) { try { audioCtx.close(); } catch (e) {} }
+            });
+
+            console.log('🌊 Procedural Water Engine ready.');
+            console.log('  Realism toggles: Noise Bubbles | Flow LFO | Sub-Bass');
+            console.log('  Resonance toggles: Feedback Delay | Cascaded BP | Saturation | Q Modulation');
+            console.log('  All features can be toggled while playing.');
+        })();
+    </script>
+</body>
+  </html>
