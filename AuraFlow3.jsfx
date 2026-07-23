@@ -1,0 +1,320 @@
+desc: AuraFlow3 - Procedural Water Engine (Full Resonance)
+author: Converted from Web Audio API
+version: 1.0
+
+in_pin:none
+out_pin:left output
+out_pin:right output
+
+slider1:0<0,2,1{Stop,Normal Water,Resonant Water}>Mode
+slider2:1<0,1,1{Sine,Noise}>[Realism] Noise-Based Bubbles
+slider3:1<0,1,1{Off,On}>[Realism] Flow LFO Modulation
+slider4:1<0,1,1{Off,On}>[Realism] Sub-Bass Rumble
+slider5:1<0,1,1{Off,On}>[Resonance] Feedback Delay (C4)
+slider6:1<0,1,1{Off,On}>[Resonance] Cascaded Bandpass
+slider7:1<0,1,1{Off,On}>[Resonance] Pre-Filter Saturation
+slider8:1<0,1,1{Off,On}>[Resonance] Q Mod (Breathing)
+
+@init
+// --- MATH & UTILS ---
+function softclip_tanh(x) local(e) (
+    x = max(min(x, 5), -5); // Prevent overflow
+    e = exp(2 * x);
+    (e - 1) / (e + 1);
+);
+
+// --- MEMORY ALLOCATION ---
+// Reserving indices 0 to 10000 for the circular delay buffer.
+delay_buf = 0; 
+delay_pos = 0;
+// Max delay for 261.63 Hz at 192kHz is ~733 samples, so 10000 is extremely safe.
+
+// --- OBJECT DEFINITIONS ---
+
+// Biquad Filter
+function bq_init() instance(x1, x2, y1, y2) (
+    x1 = 0; x2 = 0; y1 = 0; y2 = 0;
+);
+function bq_lp(freq, q) instance(a0, a1, a2, b1, b2) local(w0, alpha, cosw, a0_norm) (
+    w0 = 2 * $pi * freq / srate;
+    alpha = sin(w0) / (2 * q);
+    cosw = cos(w0);
+    a0_norm = 1 / (1 + alpha);
+    a0 = ((1 - cosw) * 0.5) * a0_norm;
+    a1 = (1 - cosw) * a0_norm;
+    a2 = a0;
+    b1 = -2 * cosw * a0_norm;
+    b2 = (1 - alpha) * a0_norm;
+);
+// Standard constant-peak-gain bandpass (like Web Audio)
+function bq_bp(freq, q) instance(a0, a1, a2, b1, b2) local(w0, alpha, cosw, a0_norm) (
+    w0 = 2 * $pi * freq / srate;
+    alpha = sin(w0) / (2 * q);
+    cosw = cos(w0);
+    a0_norm = 1 / (1 + alpha);
+    a0 = alpha * a0_norm;
+    a1 = 0;
+    a2 = -alpha * a0_norm;
+    b1 = -2 * cosw * a0_norm;
+    b2 = (1 - alpha) * a0_norm;
+);
+function bq_process(x) instance(a0, a1, a2, b1, b2, x1, x2, y1, y2) local(y) (
+    y = a0 * x + a1 * x1 + a2 * x2 - b1 * y1 - b2 * y2;
+    x2 = x1;
+    x1 = x;
+    y2 = y1;
+    y1 = y;
+    y;
+);
+
+// Brown Noise Generator
+function brn_init() instance(lastOut) ( lastOut = 0; );
+function brn_next() instance(lastOut) local(white) (
+    white = rand(2) - 1;
+    lastOut = (lastOut + 0.02 * white) / 1.02;
+    lastOut * 3.5;
+);
+
+// Simple LFO
+function lfo_init(freq) instance(phase, inc) (
+    phase = 0;
+    inc = freq / srate;
+);
+function lfo_next() instance(phase, inc) local(val) (
+    val = sin(phase * 2 * $pi);
+    phase += inc;
+    phase > 1 ? phase -= 1;
+    val;
+);
+
+// Compressor
+function comp_init(thresh_db, ratio, att_s, rel_s) instance(thresh, ratio_inv, att_coef, rel_coef, env) (
+    thresh = thresh_db;
+    ratio_inv = 1 / ratio;
+    att_coef = exp(-1 / (srate * att_s));
+    rel_coef = exp(-1 / (srate * rel_s));
+    env = 0;
+);
+function comp_process(x) instance(thresh, ratio_inv, att_coef, rel_coef, env) local(x_db, diff, targ_gr) (
+    x_db = 20 * log10(abs(x) + 0.000001);
+    diff = x_db - thresh;
+    targ_gr = diff > 0 ? diff * (1 - ratio_inv) : 0;
+    env = targ_gr > env ? targ_gr + att_coef * (env - targ_gr) : targ_gr + rel_coef * (env - targ_gr);
+    10 ^ (-env / 20); // Return linear make-up multiplier
+);
+
+// Bubble Voice
+function bbl_init() instance(active) ( active = 0; );
+function bbl_trigger(type) instance(active, type, base_f, dur, att, dec, time, peak_amp, phase, q, bp) (
+    this.type = type;
+    this.type == 0 ? (
+        this.base_f = 300 + rand(500);
+        this.dur = srate * (0.05 + rand(0.08));
+        this.att = srate * 0.01;
+        this.peak_amp = 0.3 + rand(0.4);
+    ) : (
+        this.base_f = 400 + rand(600);
+        this.dur = srate * (0.03 + rand(0.06));
+        this.att = srate * 0.005;
+        this.peak_amp = 0.22 + rand(0.3);
+        this.q = 8 + rand(14);
+        this.bp.bq_init();
+    );
+    this.dec = this.dur - this.att;
+    this.time = 0;
+    this.phase = 0;
+    this.active = 1;
+);
+function bbl_process() instance(active, type, base_f, dur, att, dec, time, peak_amp, phase, q, bp) local(env, f, out, noise_src) (
+    out = 0;
+    this.active ? (
+        this.time += 1;
+        
+        // Envelope Generation
+        this.time < this.att ? (
+            env = (this.time / this.att) * this.peak_amp;
+        ) : (
+            this.time < this.dur ? (
+                env = this.peak_amp * exp( log(0.001 / this.peak_amp) * ((this.time - this.att) / this.dec) );
+            ) : (
+                this.active = 0;
+            );
+        );
+        
+        // Audio Synthesis
+        this.active ? (
+            this.type == 0 ? (
+                f = this.base_f * exp( log(1.5) * (this.time / this.dur) );
+                this.phase += f / srate;
+                this.phase > 1 ? this.phase -= 1;
+                out = sin(this.phase * 2 * $pi) * env;
+            ) : (
+                f = this.base_f * exp( log(2.0) * (this.time / this.dur) );
+                this.bp.bq_bp(f, this.q);
+                noise_src = rand(2) - 1;
+                out = this.bp.bq_process(noise_src) * env;
+            );
+        );
+    );
+    out;
+);
+
+// --- INITIALIZATIONS ---
+main_noise.brn_init();
+sub_noise.brn_init();
+
+main_lp.bq_init();
+sub_lp.bq_init();
+fb_lp.bq_init();
+
+flow_lfo.lfo_init(0.15 + rand(0.3));
+
+res_lfo1.lfo_init(0.08);
+res_lfo2.lfo_init(0.11);
+res_lfo3.lfo_init(0.09);
+res_lfo4.lfo_init(0.13);
+
+bp1_a.bq_init(); bp1_b.bq_init();
+bp2_a.bq_init(); bp2_b.bq_init();
+bp3_a.bq_init(); bp3_b.bq_init();
+bp4_a.bq_init(); bp4_b.bq_init();
+
+// Bubble Polyphony (3 parallel voices is plenty for the specified cluster intervals)
+bbl1.bbl_init();
+bbl2.bbl_init();
+bbl3.bbl_init();
+
+// Master Compressor: Thresh -12dB, Ratio 4:1, Attack 5ms, Release 150ms
+compressor.comp_init(-12, 4, 0.005, 0.15);
+
+// Timers
+next_bubble_timer = srate * 0.5;
+cluster_active = 0;
+cluster_timer = 0;
+
+delay_len = max(floor(srate / 261.63), 1);
+i = 0;
+loop(delay_len,
+    delay_buf[i] = 0;
+    i += 1;
+);
+
+
+@block
+// Automatically adjust delay length if sample rate mysteriously changes mid-session
+delay_len = max(floor(srate / 261.63), 1);
+
+
+@sample
+slider1 == 0 ? (
+    spl0 = spl1 = 0; // Stop Mode
+) : (
+    // ---- BUBBLE SCHEDULER ----
+    cluster_active ? (
+        cluster_timer -= 1;
+        cluster_timer <= 0 ? (
+            cluster_active = 0;
+            slider2 == 1 ? (
+                bbl1.active == 0 ? bbl1.bbl_trigger(1) :
+                bbl2.active == 0 ? bbl2.bbl_trigger(1) :
+                bbl3.active == 0 ? bbl3.bbl_trigger(1) : 0;
+            );
+        );
+    );
+
+    next_bubble_timer -= 1;
+    next_bubble_timer <= 0 ? (
+        _type = slider2;
+        bbl1.active == 0 ? bbl1.bbl_trigger(_type) :
+        bbl2.active == 0 ? bbl2.bbl_trigger(_type) :
+        bbl3.active == 0 ? bbl3.bbl_trigger(_type) : 0;
+        
+        _type == 1 && rand(1) < 0.3 ? (
+            cluster_active = 1;
+            cluster_timer = srate * (0.015 + rand(0.040));
+        );
+        
+        next_bubble_timer = srate * (0.040 + rand(0.180));
+    );
+    bubble_sum = bbl1.bbl_process() + bbl2.bbl_process() + bbl3.bbl_process();
+
+
+    // ---- PROCEDURAL WATER MIX ----
+    main_n = main_noise.brn_next();
+    
+    slider3 == 1 ? (
+        main_lp.bq_lp(600 + 150 * flow_lfo.lfo_next(), 1.0);
+    ) : (
+        main_lp.bq_lp(600, 1.0);
+    );
+    water_mix = main_lp.bq_process(main_n);
+    
+    slider4 == 1 ? (
+        sub_lp.bq_lp(100, 1.0);
+        water_mix += sub_lp.bq_process(sub_noise.brn_next()) * 0.55;
+    );
+    
+    water_mix += bubble_sum;
+
+
+    // ---- MASTER ROUTING ----
+    slider1 == 1 ? ( 
+        // Normal Mode
+        out = water_mix;
+        out *= 1.0; 
+    ) : ( 
+        // Resonant Mode
+        slider7 == 1 ? (
+            res_in = softclip_tanh(water_mix * 2.2);
+        ) : (
+            res_in = water_mix;
+        );
+        
+        // Update Breathing Q Mods
+        q1 = 28; q2 = 28; q3 = 28; q4 = 28;
+        slider8 == 1 ? (
+            q1 += 22 * res_lfo1.lfo_next();
+            q2 += 22 * res_lfo2.lfo_next();
+            q3 += 22 * res_lfo3.lfo_next();
+            q4 += 22 * res_lfo4.lfo_next();
+        );
+        
+        // C4, E4, G4, C5
+        bp1_a.bq_bp(261.63, q1); bp1_b.bq_bp(261.63, q1);
+        bp2_a.bq_bp(329.63, q2); bp2_b.bq_bp(329.63, q2);
+        bp3_a.bq_bp(392.00, q3); bp3_b.bq_bp(392.00, q3);
+        bp4_a.bq_bp(523.25, q4); bp4_b.bq_bp(523.25, q4);
+        
+        v1_1 = bp1_a.bq_process(res_in); v1_2 = bp1_b.bq_process(v1_1);
+        v2_1 = bp2_a.bq_process(res_in); v2_2 = bp2_b.bq_process(v2_1);
+        v3_1 = bp3_a.bq_process(res_in); v3_2 = bp3_b.bq_process(v3_1);
+        v4_1 = bp4_a.bq_process(res_in); v4_2 = bp4_b.bq_process(v4_1);
+        
+        bank_out = slider6 == 1 ? (v1_2 + v2_2 + v3_2 + v4_2) : (v1_1 + v2_1 + v3_1 + v4_1);
+        
+        // Tuned Feedback Delay
+        delay_out_val = 0;
+        slider5 == 1 ? (
+            delay_out_val = delay_buf[delay_pos];
+            fb_lp.bq_lp(8000, 0.7);
+            fb_sig = fb_lp.bq_process(delay_out_val) * 0.35;
+            
+            delay_buf[delay_pos] = water_mix + fb_sig;
+            delay_pos += 1;
+            delay_pos >= delay_len ? delay_pos = 0;
+        );
+        
+        out = (water_mix * 0.15) + bank_out;
+        slider5 == 1 ? out += (delay_out_val * 0.5);
+        out *= 0.75; // Resonant Mode Master Gain Offset
+    );
+    
+    // ---- COMPRESSION & FINAL OUTPUT ----
+    gain_reduction_lin = compressor.comp_process(out);
+    out *= gain_reduction_lin;
+    
+    // Safety Limiting to keep inside audio boundaries [-1, 1]
+    out = max(min(out, 1.0), -1.0);
+    
+    spl0 = spl1 = out;
+);
